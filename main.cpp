@@ -1,11 +1,12 @@
 #include <string>
 #include <memory>
 #include <iostream>
+#include <thread>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 
-void zLog(int level, const char *tag, const char *fileName, const char *funcName, int lineNum,
+void logPrint(int level, const char *tag, const char *fileName, const char *funcName, int lineNum,
 	const char *fmt, ...)
 {
 	va_list ap;
@@ -16,7 +17,6 @@ void zLog(int level, const char *tag, const char *fileName, const char *funcName
 	va_end(ap);
 	printf("\n");
 }
-
 
 #include "cxx_tm_call.hpp"
 
@@ -33,10 +33,12 @@ struct ComplexReturnCodeWrapper {
 	inline ComplexReturnCodeWrapper() { code = -EFAIL; }
 };
 
-struct StringStatusCode {
+struct Struct1 {
+    int a = 1;
+    long b = 3;
+    double c = 5;
+    char data1[1024];
     std::string s;
-    void set(bool v) { s = v ? "OKAY" : "FAILED"; }
-    void set(int v) { s = v == 0 ? "OKAY" : "FAILED"; }
 };
 
 ComplexReturnCodeWrapper readData(void *&data, const std::string& filename)
@@ -64,12 +66,19 @@ ComplexReturnCodeWrapper readData(void *&data, const std::string& filename)
 			break;
 		}
 
-		ret = ComplexReturnCodeWrapper(0);
+        ret = ComplexReturnCodeWrapper(0);
 		break;
     }
 
     if(fp != nullptr)
 		fclose(fp);
+
+    static int msCount = 2;
+    std::chrono::milliseconds ms(msCount);
+    if(++msCount >= 32)
+        msCount = 2;
+    std::this_thread::sleep_for(ms);
+
 	return ret;
 }
 
@@ -79,63 +88,133 @@ void tmpString(std::string s) {
     std::cout << "Replace \"" << old << "\" to \"" << s << "\"\n";
 }
 
+void newString(std::string& d, const char *s) {
+    d = s;
+}
+
+bool isOddV1(int v) {
+    if(v % 2 == 0) {
+        if(v < 0)
+            throw v;
+        return false;
+    }
+    return true;
+}
+
+bool isOddV2(int v) {
+    if(v % 2 == 0) {
+        if(v < 0) {
+            char tmp[32];
+            snprintf(tmp, sizeof(tmp), "Num-%d", v);
+            throw std::string(tmp);
+        }
+        return false;
+    }
+    return true;
+}
+
+void checkDigitalString(const std::string& s, int base = 10) {
+    int upper = 10;
+    if(base != 10 && base != 2 && base != 8 && base != 16) {
+        char tmp[64];
+        std::string err = "Invalid base ";
+        snprintf(tmp, sizeof(tmp), "%d", base);
+        err += tmp;
+        return;
+    }
+
+    for(auto c : s) {
+        if(base == 16 && (!(c >= 'a' && c <= 'f') && !(c >= 'A' && c <= 'F')))
+            throw s;
+        if(!(c >= '0' && c < '0' + base))
+            throw s;
+    }
+}
+
+Struct1 getStr1(int v) {
+    Struct1 ret;
+    ret.a = v;
+    snprintf(ret.data1, sizeof(ret.data1), "%d", v);
+    ret.s = ret.data1;
+
+    static int msCount = 1;
+    std::chrono::milliseconds ms(msCount);
+    if(++msCount >= 32)
+        msCount = 2;
+    std::this_thread::sleep_for(ms);
+
+    return ret;
+}
+
+int add(const std::string& s1, const std::string& s2, int& result) {
+    for(auto c : s1)
+        if(!(c >= '0' && c <= '9'))
+            throw s1;
+    for(auto c : s2)
+        if(!(c >= '0' && c <= '9'))
+            throw s2; 
+    result = atoi(s1.c_str()) + atoi(s2.c_str());
+    return 0;
+}
+
 int main() {
-    int elapsedTime, retInt, len;
+    int elapsedTime, len, iRet, v1;
     std::string s1;
+    void *buf1;
+    bool bRet;
 
     yz11_tm_call(elapsedTime, tmpString, s1);
     std::cout << "Line " << __LINE__ << " : " << s1 << "\n";
 
-    len = yz11_tm_call(elapsedTime, strlen, "Hello world");
+    YZ11_TM_CALL(elapsedTime, newString, s1, "StringS1");
+    std::cout << "Line " << __LINE__ << " : " << s1 << "\n";
+
+    len = YZ11_TM_CALL(elapsedTime, strlen, "Hello world");
     std::cout << "Line " << __LINE__ << " : " << len << "\n";
-    len = yz11_tm_call_zlog(CXX11_CURRENT_SOURCE_LOCATION, CXX11_FN_AND_NAME(strlen), "Hello world");
+    len = YZ11_TM_CALL_WITH_LOGS(strlen, "Hello world");
     std::cout << "Line " << __LINE__ << " : " << len << "\n";
 
-#if 0
-    m1 = yz11_tm_call(elapsedTime, cv::imread, imFileName, cv::IMREAD_UNCHANGED);
-    printf("Used %dMS, M %dx%d\n", elapsedTime, m1.cols, m1.rows);
-    yz11_tm_call(elapsedTime, cv::imencode, ".jpg",
-        m1, outBuf, std::vector<int>(cv::IMWRITE_JPEG_QUALITY, 90));
-    printf("Used %dMS\n", elapsedTime);
+    elapsedTime = -1;
+    YZ11_TM_CALL(elapsedTime, readData, buf1, "1.dat");
+    std::cout << "Line " << __LINE__ << " : elapsed time " << elapsedTime << "ms\n";
+    if(buf1 != nullptr) {
+        free(buf1);
+        buf1 = nullptr;
+    }
 
-    m1 = yz11_algo_call_catch_exception(
-        CXX11_FN_AND_NAME(cv::imread), imFileName, cv::IMREAD_COLOR);
-    checkMatEmpty(m1, __LINE__);
-    m1 = yz11_algo_call_catch_exception_zlog(CXX11_CURRENT_SOURCE_LOCATION,
-        CXX11_FN_AND_NAME(cv::imread), imFileName, cv::IMREAD_COLOR); checkMatEmpty(m1, __LINE__);
+    YZ11_TM_CALL_WITH_LOGS(readData, buf1, "1.dat");
+    if(buf1 != nullptr) {
+        free(buf1);
+        buf1 = nullptr;
+    }
 
-    yz11_tm_call_nozlog(CXX11_CURRENT_SOURCE_LOCATION,
-        CXX11_FN_AND_NAME(cv4_imread), m1, imFileName, cv::IMREAD_COLOR); checkMatEmpty(m1, __LINE__);
-    yz11_tm_call_zlog(CXX11_CURRENT_SOURCE_LOCATION,
-        CXX11_FN_AND_NAME(cv4_imread), m1, imFileName, cv::IMREAD_COLOR); checkMatEmpty(m1, __LINE__);
+    YZ11_TM_CALL_WITH_LOGS(readData, buf1, "2.dat");
+    if(buf1 != nullptr) {
+        free(buf1);
+        buf1 = nullptr;
+    }
 
-    yz11_tm_call_zlog(CXX11_CURRENT_SOURCE_LOCATION,
-        CXX11_FN_AND_NAME(cv3_imread), m1, imFileName, cv::IMREAD_COLOR);
-#endif
+    bRet = YZ11_TM_CALL_CATCHING_EXCEPTION_WITH_LOGS(isOddV1, false, 2);
+    bRet = YZ11_TM_CALL_CATCHING_EXCEPTION_WITH_LOGS(isOddV2, false, -2);
 
-#if 0
-#define MULTI_CALLS(func, ...) \
-    yz11_tm_call(elapsedTime, func, ##__VA_ARGS__); \
-    printf("%s:%d: %s() spent %dMS\n", __func__, __LINE__, #func, elapsedTime); \
-    YZ11_TM_CALL_ZLOG(func, ##__VA_ARGS__); \
-    YZ11_ALGO_CALL_CATCH_EXCEPTION(func, ##__VA_ARGS__); \
-    YZ11_ALGO_CALL_CATCH_EXCEPTION_ZLOG(func, ##__VA_ARGS__);
+    iRet = YZ11_TM_CALL_CATCHING_EXCEPTION_WITH_LOGS(add, -7009, "a", "1", v1);
+    std::cout << "Line " << __LINE__ << " : Ret " << iRet << "\n";
 
-    YZ11_ALGO_CALL_CATCH_EXCEPTION(cv::imread, imFileName, cv::IMREAD_COLOR);
+    iRet = YZ11_TM_CALL_CATCHING_EXCEPTION_WITH_LOGS(add, -7009, "1234", "7890", v1);
+    std::cout << "Line " << __LINE__ << " : Ret " << iRet << "\n";
 
-    MULTI_CALLS(cv::imread, imFileName, cv::IMREAD_COLOR);
-    MULTI_CALLS(cv3_imread, m1, imFileName, cv::IMREAD_COLOR); checkMatEmpty(m1, __LINE__);
-    MULTI_CALLS(cv4_imread, m1, imFileName, cv::IMREAD_COLOR); checkMatEmpty(m1, __LINE__, false);
-    printf("Mat %dx%d\n", m1.cols, m1.rows);
-    MULTI_CALLS(cv::imencode, ".jpg", m1, outBuf, std::vector<int>(cv::IMWRITE_JPEG_QUALITY,90));
+    {
+        auto ret = YZ11_TM_CALL_WITH_LOGS(getStr1, 98765);
+        std::cout << "Line " << __LINE__ << " : Ret " << ret.s.c_str() << "\n";
+    }
 
-    retInt = YZ11_ALGO_CALL_CATCH_EXCEPTION_ZLOG(checkMat, m1);
-    printf("ret %d\n", retInt);
-    m1.release();
-    retInt = YZ11_ALGO_CALL_CATCH_EXCEPTION_ZLOG(checkMat, m1);
-    printf("ret %d\n", retInt);
-#endif
+    YZ11_TM_CALL_CATCHING_EXCEPTION_WITH_LOGS(checkDigitalString, 0, "1234", 2);
+    YZ11_TM_CALL_CATCHING_EXCEPTION_WITH_LOGS(checkDigitalString, 0, "1234", 8);
+    YZ11_TM_CALL_CATCHING_EXCEPTION_WITH_LOGS(checkDigitalString, 0, "1234", 10);
+    YZ11_TM_CALL_CATCHING_EXCEPTION_WITH_LOGS(checkDigitalString, 0, "1234", 16);
+    YZ11_TM_CALL_CATCHING_EXCEPTION_WITH_LOGS(checkDigitalString, 0, "1234", 7);
+    YZ11_TM_CALL_CATCHING_EXCEPTION_WITH_LOGS(checkDigitalString, 0, "1234ab", 16);
+    YZ11_TM_CALL_CATCHING_EXCEPTION_WITH_LOGS(checkDigitalString, 0, "1234g", 16);
 
     return 0;
 }
-
